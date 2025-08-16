@@ -1,37 +1,8 @@
-import {
-	DocumentSymbol,
-	type DocumentSymbolProvider,
-	type ExtensionContext,
-	Range,
-	SymbolKind,
-	commands,
-	languages,
-} from 'vscode';
+import { type ExtensionContext, commands, languages } from 'vscode';
 import { osacompile, osascript } from './osa.ts';
+import { appleScriptSymbolProvider, jxaSymbolProvider } from './outline.ts';
 import { pick } from './processes.ts';
 import { createBuildTask } from './task.ts';
-
-const handlerSymbolProvider: DocumentSymbolProvider = {
-	provideDocumentSymbols(document) {
-		const text = document.getText();
-		const regex = /^\s*(?:on|to)\s+(\w+)/gm;
-		const matches: Array<{ name: string; index: number }> = [];
-		let match: RegExpExecArray | null = regex.exec(text);
-
-		while (match !== null) {
-			matches.push({ name: match[1], index: match.index });
-			match = regex.exec(text);
-		}
-
-		return matches.map((current, index) => {
-			const start = document.positionAt(current.index);
-			const endIndex = index + 1 < matches.length ? matches[index + 1].index : text.length;
-			const end = document.positionAt(endIndex);
-
-			return new DocumentSymbol(current.name, '', SymbolKind.Function, new Range(start, end), new Range(start, start));
-		});
-	},
-};
 
 async function activate(context: ExtensionContext): Promise<void> {
 	context.subscriptions.push(
@@ -97,7 +68,8 @@ async function activate(context: ExtensionContext): Promise<void> {
 			await pick();
 		}),
 
-		languages.registerDocumentSymbolProvider({ language: 'applescript' }, handlerSymbolProvider),
+		languages.registerDocumentSymbolProvider({ language: 'applescript' }, appleScriptSymbolProvider),
+		languages.registerDocumentSymbolProvider({ language: 'jxa' }, jxaSymbolProvider),
 	);
 }
 
