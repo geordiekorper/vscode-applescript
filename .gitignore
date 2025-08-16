@@ -20,3 +20,6 @@ resources/logo.png
 *.vsix
 images/logo.svg
 todo.md
+
+# macOS
+.DS_Store
