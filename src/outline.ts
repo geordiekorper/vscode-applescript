@@ -10,7 +10,37 @@ import {
 } from 'vscode';
 
 /**
- * Parse handler and tell blocks from a document using a stack-based scanner.
+ * A parsed function/tell block as returned by the scanner.
+ *
+ * Declared as an exported interface so documentation tools (TypeDoc) will
+ * present properties in the specified order (name, start, end, type).
+ */
+export interface FunctionBlock {
+	/** Human-friendly name (handler name or tell display). */
+	name: string;
+	/** Start offset in the document (character index). */
+	start: number;
+	/** End offset in the document (character index). */
+	end: number;
+	/** Block type: 'handler' for on/to, or 'tell' for tell blocks. */
+	type: 'handler' | 'tell';
+}
+
+/**
+ * Parse handler and tell blocks from a TextDocument using a stack-based scanner.
+ *
+ * This scanner walks the document line-by-line and maintains a stack of open
+ * regions. Handlers ("on"/"to") and "tell" blocks are recorded with their
+ * start offsets when they are opened and converted into result entries when
+ * their matching "end" is encountered.
+ *
+ * The algorithm is robust to nested blocks like `tell`, `try`, `if` and will
+ * correctly ignore `on error` clauses that are part of `try` blocks (these are
+ * not top-level handlers). Comment lines starting with `--` are skipped.
+ *
+ * Returns an array of blocks each with { name, start, end, type } describing
+ * the symbol name, start offset, end offset, and whether it's a 'handler' or
+ * a 'tell' block.
  */
 export function parseFunctionBlocks(document: TextDocument) {
 	const blockOpeners = ['if', 'repeat', 'try', 'considering', 'ignoring', 'using terms', 'with timeout'] as const;
@@ -25,7 +55,7 @@ export function parseFunctionBlocks(document: TextDocument) {
 		return -1;
 	};
 
-	const functionBlocks: Array<{ name: string; start: number; end: number; type: 'handler' | 'tell' }> = [];
+	const functionBlocks: FunctionBlock[] = [];
 	const stack: Array<{ type: 'handler' | 'tell' | 'block'; name?: string; kind?: string; start: number }> = [];
 
 	for (let ln = 0; ln < document.lineCount; ln++) {
@@ -97,7 +127,11 @@ export function parseFunctionBlocks(document: TextDocument) {
 }
 
 /**
- * Collect property declarations (non-comment) from the document text.
+ * Collect property declarations from text.
+ *
+ * Scans with `propertyRegex` and returns each match as { name, index }.
+ * Lines that are commented out (start with `--`) are ignored. The returned
+ * index is the character offset in the document where the match starts.
  */
 export function collectProperties(text: string, document: TextDocument, propertyRegex: RegExp) {
 	const out: Array<{ name: string; index: number }> = [];
@@ -114,7 +148,11 @@ export function collectProperties(text: string, document: TextDocument, property
 }
 
 /**
- * Collect variable assignments (non-comment) from the document text.
+ * Collect variable assignment occurrences from text.
+ *
+ * Uses `varRegex` to find `set <name> to` occurrences. Commented lines are
+ * ignored. Returns an array of { name, index } where index is the offset of
+ * the match in the document.
  */
 export function collectVariables(text: string, document: TextDocument, varRegex: RegExp) {
 	const out: Array<{ name: string; index: number }> = [];
@@ -131,9 +169,13 @@ export function collectVariables(text: string, document: TextDocument, varRegex:
 }
 
 /**
- * Build parent/child node relationships for function/tell blocks.
+ * Build a simple containment tree from an array of blocks.
+ *
+ * Each block has start/end offsets; this routine assigns a `parent` index
+ * for nodes that are contained by an earlier block, and populates `children`
+ * arrays on parents. The input is expected to be sorted by start offset.
  */
-export function buildNodeTree(blocks: Array<{ name: string; start: number; end: number; type: 'handler' | 'tell' }>) {
+export function buildNodeTree(blocks: FunctionBlock[]) {
 	const ns = blocks.map((b, i) => ({ ...b, idx: i, parent: -1 as number, children: [] as number[] }));
 	for (let i = 0; i < ns.length; i++) {
 		for (let j = i - 1; j >= 0; j--) {
@@ -151,7 +193,11 @@ export function buildNodeTree(blocks: Array<{ name: string; start: number; end: 
 }
 
 /**
- * Remove duplicate items by name, keeping the first occurrence.
+ * Remove duplicate items based on `name`, keeping the earliest occurrence.
+ *
+ * Implementation detail: items are first sorted by their `index` and then
+ * filtered so that only the first seen name is included. This is useful for
+ * deduping symbol lists while preserving document order.
  */
 export function dedupeByName(items: Array<{ name: string; index: number }>) {
 	const seen = new Set<string>();
@@ -166,15 +212,24 @@ export function dedupeByName(items: Array<{ name: string; index: number }>) {
 }
 
 /**
- * Collect top-level entry points from text using the provided regexes.
+ * Collect top-level entry points (bare calls) from a document.
+ *
+ * This scans the text for bare identifiers or identifier calls (e.g. `foo` or
+ * `foo()`) using `entryPointRegex`. Entries that appear inside handler ranges
+ * are ignored. Additionally, any function/tell block that has the same name
+ * will suppress an entry with that name (so handlers are not double-reported).
+ *
+ * The returned list is deduped by name (earliest occurrence kept) to avoid
+ * reporting repeated top-level calls.
  */
 export function collectEntryPoints(
 	text: string,
 	document: TextDocument,
 	entryPointRegex: RegExp,
 	handlerRanges: Array<{ start: number; end: number }>,
-	functionBlocks: Array<{ name: string; start: number; end: number; type: string }>,
+	functionBlocks: FunctionBlock[],
 ) {
+	// Gather raw matches first (may contain duplicates)
 	const out: Array<{ name: string; index: number }> = [];
 	let m = entryPointRegex.exec(text);
 	while (m !== null) {
@@ -188,7 +243,8 @@ export function collectEntryPoints(
 		}
 		m = entryPointRegex.exec(text);
 	}
-	return out;
+	// Return deduped entries (preserve earliest occurrence based on index)
+	return dedupeByName(out);
 }
 
 /**
@@ -303,6 +359,29 @@ export function emitSymbols(
 	return out;
 }
 
+/**
+ * AppleScript Document Symbol Provider.
+ *
+ * This provider implements a line-based, stack-driven parser that extracts
+ * AppleScript "handlers" (on/to), "tell" blocks and a set of top-level
+ * symbols (properties, variables, and bare entry-point calls). It returns an
+ * array of `DocumentSymbol` objects suitable for the VS Code outline/view.
+ *
+ * Key behaviors:
+ * - Skips lines that are commented with `--`.
+ * - Detects handler openers (`on` / `to`) and closes them on matching `end`.
+ * - Treats `on error` inside `try` as part of the `try` block (not a top-level handler).
+ * - Recognizes common block keywords (`if`, `repeat`, `try`, `using terms`, `with timeout`, etc.)
+ *   to properly nest and ignore non-handler blocks.
+ * - Collects `property` declarations and `set <var> to` assignments and nests
+ *   variables under the handler they belong to while exposing globals at top-level.
+ * - Collects bare entry points (e.g. `myHandler` or `myHandler()`) outside of handlers.
+ * - Dedupe is applied where appropriate to keep the earliest occurrence of repeated names.
+ *
+ * The implementation intentionally uses a conservative line scanner rather
+ * than a full parser to keep the provider fast and tolerant of partial/invalid
+ * code while giving useful outline symbols.
+ */
 // AppleScript Document Symbol Provider (Outline)
 export const appleScriptSymbolProvider: DocumentSymbolProvider = {
 	provideDocumentSymbols(document) {
@@ -630,6 +709,20 @@ export const appleScriptSymbolProvider: DocumentSymbolProvider = {
 	},
 };
 
+/**
+ * JXA (JavaScript for Automation) Document Symbol Provider.
+ *
+ * Instead of re-implementing a JS parser, this provider delegates to the
+ * built-in JavaScript Document Symbol Provider by creating a virtual
+ * JavaScript document with the same content and invoking
+ * `vscode.executeDocumentSymbolProvider` on it. The returned symbols may be
+ * either `DocumentSymbol[]` or `SymbolInformation[]` depending on the
+ * provider; this code converts `SymbolInformation[]` into a flat
+ * `DocumentSymbol[]` (using the symbol's location as both range and selectionRange).
+ *
+ * This approach leverages the editor's JavaScript tooling to provide a
+ * richer outline for JXA files without duplicating parsing logic.
+ */
 // JXA: delegate to JavaScript's outline by creating a virtual JS document with identical content
 export const jxaSymbolProvider: DocumentSymbolProvider = {
 	async provideDocumentSymbols(document) {

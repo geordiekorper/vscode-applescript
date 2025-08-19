@@ -4,6 +4,13 @@ import { appleScriptSymbolProvider, jxaSymbolProvider } from './outline.ts';
 import { pick } from './processes.ts';
 import { createBuildTask } from './task.ts';
 
+/**
+ * Activate the VS Code extension.
+ *
+ * This registers editor/command handlers for AppleScript and JXA workflows
+ * (run, compile, build task creation, termination) and hooks the document
+ * symbol providers for the `applescript` and `jxa` languages.
+ */
 async function activate(context: ExtensionContext): Promise<void> {
 	context.subscriptions.push(
 		/**
