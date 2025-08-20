@@ -4,8 +4,22 @@ import { window } from 'vscode';
 import { getConfig } from 'vscode-get-config';
 import { getOutName, spawnPromise } from './util.ts';
 
+/**
+ * Output channel used to surface osascript/osacompile output inside VS Code.
+ */
 const outputChannel = window.createOutputChannel('AppleScript');
 
+/**
+ * Compile the current editor document using `osacompile`.
+ *
+ * compileTarget: one of 'scpt' | 'scptd' | 'app' (controls the output format)
+ * userOptions: optional flags such as { isJXA: true } to compile as JavaScript
+ *
+ * This saves the active document, constructs appropriate arguments based on
+ * configuration, and spawns the external `osacompile` tool. Any output or
+ * errors are shown in the `outputChannel` and optionally surfaced via
+ * notifications.
+ */
 async function osacompile(compileTarget: string, userOptions: CommandFlags = { isJXA: false }): Promise<void> {
 	const { ignoreOS, osacompile, showNotifications } = await getConfig('applescript');
 
@@ -64,6 +78,13 @@ async function osacompile(compileTarget: string, userOptions: CommandFlags = { i
 	});
 }
 
+/**
+ * Run the current editor document using `osascript`.
+ *
+ * If the document has unsaved changes we pass the script to `osascript -e`
+ * line-by-line. Otherwise the filename is passed directly. `options.isJXA` can
+ * be used to run JavaScript for Automation instead of AppleScript.
+ */
 async function osascript(options: CommandFlags = { isJXA: false }): Promise<void> {
 	const { ignoreOS, osascript, showNotifications } = await getConfig('applescript');
 

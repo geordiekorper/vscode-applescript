@@ -20,6 +20,9 @@
 		"publish:vsce": "vsce publish --githubBranch main --no-dependencies",
 		"start": "npm run build:code -- --watch",
 		"test": "vitest run",
+		"docs:typedoc": "typedoc --options typedoc.json",
+		"docs:html": "typedoc --options typedoc.html.json",
+		"docs:all": "pnpm run docs:md && pnpm run docs:html",
 		"vscode:prepublish": "npm run build"
 	},
 	"keywords": [
@@ -459,6 +462,8 @@
 		"lefthook": "^1.11.12",
 		"sharp-cli": "^5.1.0",
 		"tsdown": "^0.12.6",
+		"typedoc": "^0.28.10",
+		"typedoc-plugin-markdown": "4.8.1",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.31.1",
 		"vitest": "^3.2.4"

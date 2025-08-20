@@ -7,6 +7,14 @@ import { type OutputChannel, window } from 'vscode';
 import { getConfig } from 'vscode-get-config';
 import * as activeProcesses from './processes.ts';
 
+/**
+ * Attempt to convert an osascript error line into a file:line:col:message form.
+ *
+ * This helper is used to convert tool output into clickable ranges for the
+ * editor. It reads the active editor text and uses `line-column` to map a
+ * numeric index into a 1-based line/column pair. Returns false if conversion
+ * isn't enabled or the input cannot be parsed.
+ */
 async function getLineCol(lineString: string): Promise<string | boolean> {
 	if (!(await getConfig('applescript.convertErrorRange'))) {
 		return false;
@@ -45,6 +53,10 @@ async function getLineCol(lineString: string): Promise<string | boolean> {
 	return `${doc.fileName}:${lineCol.line}:${lineCol.col}:${result.groups.message}`;
 }
 
+/**
+ * Build the default output filename for compiles based on input file name and
+ * target extension (default 'scpt').
+ */
 export function getOutName(fileName: string, extension = 'scpt'): string {
 	const dirName = dirname(fileName);
 	const baseName = basename(fileName, extname(fileName));
@@ -53,6 +65,13 @@ export function getOutName(fileName: string, extension = 'scpt'): string {
 	return outName;
 }
 
+/**
+ * Spawn a child process and return a Promise that resolves on exit.
+ *
+ * This helper attaches stdout/stderr handlers, converts any error output to
+ * a line/column path when possible, appends output to the `outputChannel`,
+ * and tracks active processes via the `processes` module.
+ */
 export async function spawnPromise(
 	cmd: string,
 	fileName: string,

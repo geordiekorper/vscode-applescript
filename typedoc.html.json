@@ -1,0 +1,23 @@
+{
+	"entryPoints": [
+		"src/index.ts",
+		"src/outline.ts",
+		"src/osa.ts",
+		"src/processes.ts",
+		"src/task.ts",
+		"src/util.ts",
+		"types/index.d.ts"
+	],
+	"out": "docs/typedoc-html",
+	"includeVersion": true,
+	"router": "structure",
+	"sort": ["source-order"],
+	"excludePrivate": true,
+	"excludeProtected": true,
+	"excludeExternals": true,
+	"exclude": ["test/**", "**/test/**", "lib/**"],
+	"skipErrorChecking": true,
+	"tsconfig": "tsconfig.json",
+	"hideGenerator": false,
+	"readme": "none"
+}

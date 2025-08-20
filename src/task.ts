@@ -5,6 +5,14 @@ import { window, workspace } from 'vscode';
 import { getConfig } from 'vscode-get-config';
 import { getOutName } from './util.ts';
 
+/**
+ * Create a workspace-level `tasks.json` containing Run/Compile tasks for the
+ * active AppleScript/JXA file. This writes `.vscode/tasks.json` in the current
+ * workspace folder with commonly used osascript/osacompile invocations.
+ *
+ * When `isJXA` is true, tasks are configured to run/compile JavaScript for
+ * Automation instead of AppleScript.
+ */
 async function createBuildTask(isJXA = false): Promise<void> {
 	if (typeof workspace.workspaceFolders === 'undefined' || workspace.workspaceFolders.length < 1) {
 		window.showErrorMessage(
